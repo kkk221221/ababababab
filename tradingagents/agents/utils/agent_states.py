@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Annotated, Dict, Any, Optional, Sequence
 from datetime import date, timedelta, datetime
 from typing_extensions import TypedDict
