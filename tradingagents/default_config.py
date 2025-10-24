@@ -53,9 +53,9 @@ DEFAULT_CONFIG = {
     },
     # LLM settings
     "llm_provider": "openai",
-    "deep_think_llm": "o4-mini",
-    "quick_think_llm": "gpt-4o-mini",
-    "backend_url": "https://api.openai.com/v1",
+    "deep_think_llm": "qwen3-max",
+    "quick_think_llm": "qwen3-max",
+    "backend_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     # Debate and discussion settings
     "max_debate_rounds": 1,
     "max_risk_discuss_rounds": 1,
@@ -63,10 +63,11 @@ DEFAULT_CONFIG = {
     # Data vendor configuration
     # Category-level configuration (default for all tools in category)
     "data_vendors": {
-        "core_stock_apis": "yfinance",       # Options: yfinance, alpha_vantage, akshare, baostock, local
-        "technical_indicators": "yfinance",  # Options: yfinance, alpha_vantage, local
-        "fundamental_data": "alpha_vantage", # Options: openai, alpha_vantage, akshare, baostock, local
-        "news_data": "alpha_vantage",        # Options: openai, alpha_vantage, google, local
+        # Prefer mainland China data providers by default
+        "core_stock_apis": "akshare",        # Options: yfinance, alpha_vantage, akshare, baostock, local
+        "technical_indicators": "akshare",   # Options: yfinance, alpha_vantage, local, akshare
+        "fundamental_data": "baostock",      # Options: openai, alpha_vantage, akshare, baostock, local
+        "news_data": "google",               # Options: openai, alpha_vantage, google, local
     },
     # Tool-level configuration (takes precedence over category-level)
     "tool_vendors": {

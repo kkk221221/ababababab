@@ -149,6 +149,9 @@ def select_shallow_thinking_agent(provider) -> str:
             ("Meta: Llama 3.3 8B Instruct - A lightweight and ultra-fast variant of Llama 3.3 70B", "meta-llama/llama-3.3-8b-instruct:free"),
             ("google/gemini-2.0-flash-exp:free - Gemini Flash 2.0 offers a significantly faster time to first token", "google/gemini-2.0-flash-exp:free"),
         ],
+        "dashscope": [
+            ("Qwen3-Max - DashScope compatible fast thinker", "qwen3-max"),
+        ],
         "ollama": [
             ("llama3.1 local", "llama3.1"),
             ("llama3.2 local", "llama3.2"),
@@ -211,6 +214,9 @@ def select_deep_thinking_agent(provider) -> str:
             ("DeepSeek V3 - a 685B-parameter, mixture-of-experts model", "deepseek/deepseek-chat-v3-0324:free"),
             ("Deepseek - latest iteration of the flagship chat model family from the DeepSeek team.", "deepseek/deepseek-chat-v3-0324:free"),
         ],
+        "dashscope": [
+            ("Qwen3-Max - DashScope compatible deep thinker", "qwen3-max"),
+        ],
         "ollama": [
             ("llama3.1 local", "llama3.1"),
             ("qwen3", "qwen3"),
@@ -242,11 +248,14 @@ def select_deep_thinking_agent(provider) -> str:
 def select_llm_provider() -> tuple[str, str]:
     """Select the OpenAI api url using interactive selection."""
     # Define OpenAI api options with their corresponding endpoints
+    import os
+    DEFAULT_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     BASE_URLS = [
         ("OpenAI", "https://api.openai.com/v1"),
         ("Anthropic", "https://api.anthropic.com/"),
         ("Google", "https://generativelanguage.googleapis.com/v1"),
         ("Openrouter", "https://openrouter.ai/api/v1"),
+        ("DashScope (OpenAI-compatible)", os.getenv("OPENAI_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")),
         ("Ollama", "http://localhost:11434/v1"),        
     ]
     
@@ -272,5 +281,11 @@ def select_llm_provider() -> tuple[str, str]:
     
     display_name, url = choice
     print(f"You selected: {display_name}\tURL: {url}")
-    
-    return display_name, url
+    # Normalize provider key for downstream lookups
+    normalized = display_name.lower().strip()
+    # Map known aliases to internal keys used in SHALLOW/DEEP options
+    alias_map: dict[str, str] = {
+        "dashscope (openai-compatible)": "dashscope",
+    }
+    provider_key = alias_map.get(normalized, normalized)
+    return provider_key, url
