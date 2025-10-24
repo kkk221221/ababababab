@@ -26,9 +26,9 @@
 - [x] Implement an aggregation routine that collects each ticker’s `final_trade_decision` and converts it into structured trade opportunities forwarded to the Portfolio Manager for approval.
 
 ### Phase 4 – Trader Enhancements for Position Sizing
-- [ ] Modify `create_trader` (and associated state updates) to request portfolio context from the orchestrator, compute position sizes using volatility-adjusted sizing (e.g., ATR from `get_stock_stats_indicators_window`), and output JSON containing side, quantity, entry constraints, and rationale.
-- [ ] Update `AgentState` (or extend with a `PortfolioContext` field) so traders and risk agents access assigned cash budgets, current exposure, and instrument correlations while generating recommendations.
-- [ ] Persist executed trades via the new storage module, ensuring the Trader records fills and updates holdings after Portfolio Manager approval.
+- [x] Modify `create_trader` (and associated state updates) to request portfolio context from the orchestrator, compute position sizes using volatility-adjusted sizing (e.g., ATR from `get_stock_stats_indicators_window`), and output JSON containing side, quantity, entry constraints, and rationale.
+- [x] Update `AgentState` (or extend with a `PortfolioContext` field) so traders and risk agents access assigned cash budgets, current exposure, and instrument correlations while generating recommendations.
+- [x] Persist executed trades via the new storage module, ensuring the Trader records fills and updates holdings after Portfolio Manager approval.
 
 ### Phase 5 – Risk Management Across the Portfolio
 - [ ] Implement quantitative calculators in `tradingagents/portfolio/risk.py` that derive portfolio beta, sector exposure, VaR, and Sharpe ratio using price history sourced from `y_finance` utilities.

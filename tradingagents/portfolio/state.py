@@ -118,6 +118,60 @@ class PortfolioSnapshot:
             del self.positions[symbol]
             self.update_totals()
 
+    def apply_transaction(
+        self,
+        transaction: TransactionRecord,
+        *,
+        commission_per_share: float = 0.0,
+    ) -> None:
+        """Apply a filled transaction to the portfolio state."""
+
+        side = transaction.side.upper()
+        quantity = transaction.quantity
+        if quantity <= 0 or side not in {"BUY", "SELL"}:
+            return
+
+        position = self.positions.get(transaction.symbol)
+        if position is None:
+            position = Position(symbol=transaction.symbol)
+
+        price = transaction.price
+        total_fees = (transaction.fees or 0.0) + commission_per_share * quantity
+
+        if side == "BUY":
+            total_cost = price * quantity + total_fees
+            self.cash -= total_cost
+            prev_cost = position.average_cost * position.quantity
+            new_quantity = position.quantity + quantity
+            if new_quantity <= 0:
+                position.quantity = 0.0
+                position.average_cost = 0.0
+            else:
+                position.quantity = new_quantity
+                position.average_cost = (
+                    prev_cost + price * quantity
+                ) / new_quantity
+            position.update_mark_to_market(price)
+            self.update_position(position)
+        else:  # SELL
+            if position.quantity <= 0:
+                return
+            sell_quantity = min(quantity, position.quantity)
+            total_proceeds = price * quantity - total_fees
+            self.cash += total_proceeds
+            realized = (price - position.average_cost) * sell_quantity
+            self.realized_pnl += realized
+            new_quantity = position.quantity - quantity
+            if new_quantity <= 0:
+                self.remove_position(transaction.symbol)
+            else:
+                position.quantity = new_quantity
+                position.update_mark_to_market(price)
+                self.update_position(position)
+
+        self.as_of = transaction.timestamp
+        self.update_totals()
+
     def to_dict(self) -> Dict[str, object]:
         return {
             "as_of": self.as_of.isoformat(),

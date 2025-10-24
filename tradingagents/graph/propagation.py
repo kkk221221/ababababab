@@ -43,6 +43,7 @@ class Propagator:
             "sentiment_report": "",
             "news_report": "",
             "portfolio_context": None,
+            "trader_structured_plan": None,
         }
         if portfolio_context is not None:
             state["portfolio_context"] = dict(portfolio_context)

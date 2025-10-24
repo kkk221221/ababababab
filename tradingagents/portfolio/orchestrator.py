@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from tradingagents.dataflows.macro import MacroSnapshot, gather_macro_snapshot
 from tradingagents.default_config import DEFAULT_CONFIG
 from tradingagents.graph.trading_graph import TradingAgentsGraph
-from tradingagents.portfolio.state import PortfolioSnapshot, empty_portfolio
+from tradingagents.portfolio.state import (
+    PortfolioSnapshot,
+    Position,
+    TransactionRecord,
+    empty_portfolio,
+)
 from tradingagents.portfolio.storage import PortfolioStorage
 
 
@@ -50,6 +57,78 @@ def _coerce_text(value: Any) -> str:
     if isinstance(value, str):
         return value.strip()
     return ""
+
+
+def _safe_div(numerator: float, denominator: float) -> float:
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator
+
+
+def _estimate_correlations(
+    focus_symbol: str,
+    snapshot: PortfolioSnapshot,
+    *,
+    trade_date: str,
+    lookback_days: int,
+) -> Dict[str, float]:
+    """Estimate correlations between the focus symbol and existing holdings."""
+
+    other_symbols = [
+        position.symbol
+        for position in snapshot.iter_positions()
+        if position.symbol != focus_symbol
+    ]
+    if not other_symbols:
+        return {}
+
+    try:
+        import pandas as pd
+        import yfinance as yf
+    except ImportError:
+        return {}
+
+    try:
+        end_dt = datetime.strptime(trade_date, "%Y-%m-%d")
+    except ValueError:
+        end_dt = snapshot.as_of
+    start_dt = end_dt - timedelta(days=max(lookback_days, 1) * 2)
+
+    tickers = sorted({focus_symbol, *other_symbols})
+    price_series: List[pd.Series] = []
+    for ticker in tickers:
+        history = yf.Ticker(ticker).history(
+            start=start_dt.strftime("%Y-%m-%d"),
+            end=(end_dt + timedelta(days=1)).strftime("%Y-%m-%d"),
+        )
+        if history.empty or "Close" not in history:
+            continue
+        series = history["Close"].rename(ticker).dropna()
+        if not series.empty:
+            price_series.append(series)
+
+    if not price_series:
+        return {}
+
+    combined = pd.concat(price_series, axis=1).dropna(how="any")
+    if combined.empty or focus_symbol not in combined.columns:
+        return {}
+
+    returns = combined.pct_change().dropna(how="any")
+    if returns.empty:
+        return {}
+
+    corr_series = returns.corr().get(focus_symbol)
+    if corr_series is None:
+        return {}
+
+    correlations: Dict[str, float] = {}
+    for symbol, value in corr_series.items():
+        if symbol == focus_symbol:
+            continue
+        if isinstance(value, float) and not math.isnan(value):
+            correlations[symbol] = float(round(value, 4))
+    return correlations
 
 
 @dataclass
@@ -116,25 +195,87 @@ class PortfolioOrchestrator:
             snapshot = empty_portfolio(starting_cash)
         return snapshot
 
-    def _build_portfolio_context(self, snapshot: PortfolioSnapshot, symbol: str) -> Dict[str, Any]:
-        positions_payload = {
-            pos.symbol: {
+    def _build_portfolio_context(
+        self,
+        snapshot: PortfolioSnapshot,
+        symbol: str,
+        trade_date: str,
+    ) -> Dict[str, Any]:
+        portfolio_cfg = self.config.get("portfolio", {})
+        total_equity = snapshot.total_equity or snapshot.cash
+        max_single_pct = portfolio_cfg.get("max_single_position_pct")
+        risk_per_trade_pct = portfolio_cfg.get("risk_per_trade_pct", 0.01)
+
+        positions_payload: Dict[str, Dict[str, Any]] = {}
+        gross_exposure = 0.0
+        focus_position: Optional[Position] = None
+        for pos in snapshot.iter_positions():
+            exposure_pct = _safe_div(pos.market_value, total_equity)
+            positions_payload[pos.symbol] = {
                 "quantity": pos.quantity,
                 "average_cost": pos.average_cost,
                 "market_value": pos.market_value,
+                "exposure_pct": exposure_pct,
             }
-            for pos in snapshot.iter_positions()
-        }
-        portfolio_cfg = self.config.get("portfolio", {})
+            gross_exposure += abs(pos.market_value)
+            if pos.symbol == symbol:
+                focus_position = pos
+
+        focus_value = focus_position.market_value if focus_position else 0.0
+        focus_pct = _safe_div(focus_value, total_equity)
+        gross_exposure_pct = _safe_div(gross_exposure, total_equity)
+
+        max_single_value = (
+            total_equity * float(max_single_pct)
+            if max_single_pct not in (None, 0)
+            else None
+        )
+        remaining_allocation = None
+        if max_single_value is not None:
+            remaining_allocation = max(0.0, max_single_value - focus_value)
+
+        available_cash = snapshot.cash
+        allocatable_cash = available_cash
+        if remaining_allocation is not None:
+            allocatable_cash = min(available_cash, remaining_allocation)
+        risk_budget = min(
+            allocatable_cash,
+            total_equity * float(risk_per_trade_pct) if total_equity > 0 else allocatable_cash,
+        )
+
+        correlation_lookback = int(portfolio_cfg.get("correlation_lookback_days", 60))
+        correlations = _estimate_correlations(
+            symbol,
+            snapshot,
+            trade_date=trade_date,
+            lookback_days=correlation_lookback,
+        )
+
         return {
             "as_of": snapshot.as_of.isoformat(),
             "cash": snapshot.cash,
-            "total_equity": snapshot.total_equity,
+            "total_equity": total_equity,
             "positions": positions_payload,
             "constraints": {
-                "max_single_position_pct": portfolio_cfg.get("max_single_position_pct"),
+                "max_single_position_pct": max_single_pct,
                 "max_gross_exposure_pct": portfolio_cfg.get("max_gross_exposure_pct"),
+                "risk_per_trade_pct": risk_per_trade_pct,
+                "atr_position_multiple": portfolio_cfg.get("atr_position_multiple"),
+                "min_trade_notional": portfolio_cfg.get("min_trade_notional"),
             },
+            "budgets": {
+                "available_cash": available_cash,
+                "max_single_position_value": max_single_value,
+                "remaining_allocation": remaining_allocation,
+                "risk_budget": risk_budget,
+                "existing_position_value": focus_value,
+            },
+            "exposure": {
+                "focus_position_value": focus_value,
+                "focus_position_pct": focus_pct,
+                "gross_exposure_pct": gross_exposure_pct,
+            },
+            "correlations": correlations,
             "focus_symbol": symbol,
         }
 
@@ -167,8 +308,51 @@ class PortfolioOrchestrator:
                 "news_report": final_state.get("news_report"),
                 "fundamentals_report": final_state.get("fundamentals_report"),
                 "investment_plan": final_state.get("investment_plan"),
+                "trader_structured_plan": final_state.get("trader_structured_plan"),
             },
         )
+
+    def apply_execution(self, execution: Mapping[str, Any]) -> PortfolioSnapshot:
+        """Persist an approved trade execution and update the portfolio snapshot."""
+
+        snapshot = self.load_portfolio()
+        portfolio_cfg = self.config.get("portfolio", {})
+        commission_per_share = float(portfolio_cfg.get("commission_per_share", 0.0))
+        default_slippage = float(portfolio_cfg.get("default_slippage_bps", 0.0))
+
+        symbol = str(execution.get("symbol", "")).upper()
+        side = str(execution.get("side", "")).upper()
+        quantity = float(execution.get("quantity", 0.0))
+        price = float(execution.get("price", 0.0))
+        if not symbol or side not in {"BUY", "SELL"} or quantity <= 0 or price <= 0:
+            return snapshot
+
+        timestamp_raw = execution.get("timestamp")
+        if isinstance(timestamp_raw, datetime):
+            timestamp = timestamp_raw
+        else:
+            try:
+                timestamp = datetime.fromisoformat(str(timestamp_raw))
+            except (TypeError, ValueError):
+                timestamp = datetime.utcnow()
+
+        transaction = TransactionRecord(
+            symbol=symbol,
+            side=side,
+            quantity=quantity,
+            price=price,
+            timestamp=timestamp,
+            fees=float(execution.get("fees", 0.0)),
+            slippage_bps=float(execution.get("slippage_bps", default_slippage)),
+        )
+
+        snapshot.apply_transaction(
+            transaction,
+            commission_per_share=commission_per_share,
+        )
+        self.storage.save_snapshot(snapshot)
+        self.storage.record_transaction(transaction)
+        return snapshot
 
     def run_universe(
         self,
@@ -188,7 +372,11 @@ class PortfolioOrchestrator:
 
         for symbol in tickers:
             graph = self._graph_factory()
-            portfolio_context = self._build_portfolio_context(portfolio_snapshot, symbol)
+            portfolio_context = self._build_portfolio_context(
+                portfolio_snapshot,
+                symbol,
+                trade_date,
+            )
             final_state, processed_signal = graph.propagate(
                 symbol,
                 trade_date,
