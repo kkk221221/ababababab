@@ -111,4 +111,5 @@ class PortfolioContext(TypedDict, total=False):
     budgets: PortfolioBudget
     exposure: PortfolioExposure
     correlations: Dict[str, float]
+    risk_metrics: Dict[str, Any]
 

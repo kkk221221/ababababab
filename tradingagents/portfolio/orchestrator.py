@@ -17,6 +17,7 @@ from tradingagents.portfolio.state import (
     TransactionRecord,
     empty_portfolio,
 )
+from tradingagents.portfolio.risk import compute_portfolio_risk_metrics
 from tradingagents.portfolio.storage import PortfolioStorage
 
 
@@ -200,6 +201,8 @@ class PortfolioOrchestrator:
         snapshot: PortfolioSnapshot,
         symbol: str,
         trade_date: str,
+        *,
+        risk_metrics: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         portfolio_cfg = self.config.get("portfolio", {})
         total_equity = snapshot.total_equity or snapshot.cash
@@ -251,6 +254,23 @@ class PortfolioOrchestrator:
             lookback_days=correlation_lookback,
         )
 
+        risk_metrics_payload: Dict[str, Any] = risk_metrics or {}
+        if not risk_metrics_payload:
+            try:
+                risk_metrics_obj = compute_portfolio_risk_metrics(
+                    snapshot,
+                    trade_date=trade_date,
+                    benchmark_symbol=str(
+                        portfolio_cfg.get("risk_benchmark_symbol", "SPY")
+                    ),
+                    lookback_days=int(portfolio_cfg.get("risk_lookback_days", 180)),
+                    confidence=float(portfolio_cfg.get("var_confidence", 0.95)),
+                    risk_free_rate=float(portfolio_cfg.get("risk_free_rate", 0.02)),
+                )
+                risk_metrics_payload = risk_metrics_obj.to_dict()
+            except Exception:
+                risk_metrics_payload = {}
+
         return {
             "as_of": snapshot.as_of.isoformat(),
             "cash": snapshot.cash,
@@ -262,6 +282,10 @@ class PortfolioOrchestrator:
                 "risk_per_trade_pct": risk_per_trade_pct,
                 "atr_position_multiple": portfolio_cfg.get("atr_position_multiple"),
                 "min_trade_notional": portfolio_cfg.get("min_trade_notional"),
+                "max_var_pct": portfolio_cfg.get("max_var_pct"),
+                "max_portfolio_beta": portfolio_cfg.get("max_portfolio_beta"),
+                "min_portfolio_sharpe": portfolio_cfg.get("min_portfolio_sharpe"),
+                "max_sector_exposure_pct": portfolio_cfg.get("max_sector_exposure_pct"),
             },
             "budgets": {
                 "available_cash": available_cash,
@@ -277,6 +301,7 @@ class PortfolioOrchestrator:
             },
             "correlations": correlations,
             "focus_symbol": symbol,
+            "risk_metrics": risk_metrics_payload,
         }
 
     def _aggregate_opportunity(
@@ -367,6 +392,23 @@ class PortfolioOrchestrator:
         if macro_snapshot is None:
             macro_snapshot = gather_macro_snapshot(trade_date, config=self.config)
 
+        portfolio_cfg = self.config.get("portfolio", {})
+        risk_metrics_payload: Dict[str, Any] = {}
+        try:
+            risk_metrics_obj = compute_portfolio_risk_metrics(
+                portfolio_snapshot,
+                trade_date=trade_date,
+                benchmark_symbol=str(
+                    portfolio_cfg.get("risk_benchmark_symbol", "SPY")
+                ),
+                lookback_days=int(portfolio_cfg.get("risk_lookback_days", 180)),
+                confidence=float(portfolio_cfg.get("var_confidence", 0.95)),
+                risk_free_rate=float(portfolio_cfg.get("risk_free_rate", 0.02)),
+            )
+            risk_metrics_payload = risk_metrics_obj.to_dict()
+        except Exception:
+            risk_metrics_payload = {}
+
         opportunities: List[TradeOpportunity] = []
         graph_results: List[Dict[str, Any]] = []
 
@@ -376,6 +418,7 @@ class PortfolioOrchestrator:
                 portfolio_snapshot,
                 symbol,
                 trade_date,
+                risk_metrics=risk_metrics_payload,
             )
             final_state, processed_signal = graph.propagate(
                 symbol,
@@ -399,6 +442,7 @@ class PortfolioOrchestrator:
             "portfolio_manager_input": {
                 "portfolio_snapshot": portfolio_snapshot.to_dict(),
                 "macro_snapshot": macro_snapshot.to_dict(),
+                "risk_metrics": risk_metrics_payload,
                 "trade_opportunities": [item.to_dict() for item in opportunities],
             },
         }

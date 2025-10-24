@@ -31,9 +31,9 @@
 - [x] Persist executed trades via the new storage module, ensuring the Trader records fills and updates holdings after Portfolio Manager approval.
 
 ### Phase 5 – Risk Management Across the Portfolio
-- [ ] Implement quantitative calculators in `tradingagents/portfolio/risk.py` that derive portfolio beta, sector exposure, VaR, and Sharpe ratio using price history sourced from `y_finance` utilities.
-- [ ] Feed those metrics into the risk debate prompts (`aggresive_debator.py`, `conservative_debator.py`, `neutral_debator.py`) so each viewpoint references concrete numbers (e.g., "Current portfolio beta is 1.3") alongside qualitative reasoning.
-- [ ] Expand the risk judge (`risk_manager.py`) to cross-check proposed trades against concentration limits, VaR thresholds, and stress scenarios, potentially requesting hedging suggestions when limits are breached.
+- [x] Implement quantitative calculators in `tradingagents/portfolio/risk.py` that derive portfolio beta, sector exposure, VaR, and Sharpe ratio using price history sourced from `y_finance` utilities.
+- [x] Feed those metrics into the risk debate prompts (`aggresive_debator.py`, `conservative_debator.py`, `neutral_debator.py`) so each viewpoint references concrete numbers (e.g., "Current portfolio beta is 1.3") alongside qualitative reasoning.
+- [x] Expand the risk judge (`risk_manager.py`) to cross-check proposed trades against concentration limits, VaR thresholds, and stress scenarios, potentially requesting hedging suggestions when limits are breached.
 
 ### Phase 6 – Portfolio Manager Decision Loop & Feedback
 - [ ] Implement a closed-loop update where executed trades trigger portfolio snapshot refreshes, rebalancing checks, and feedback messages distributed to analysts, researchers, and the Portfolio Manager to inform future decisions.
