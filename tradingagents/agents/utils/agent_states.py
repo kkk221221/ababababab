@@ -57,6 +57,10 @@ class AgentState(MessagesState):
         Optional[PortfolioContext],
         "Portfolio level context for the current run",
     ]
+    portfolio_feedback: Annotated[
+        Optional[Dict[str, Any]],
+        "Latest portfolio feedback items shared across agents",
+    ]
 
     # research step
     market_report: Annotated[str, "Report from the Market Analyst"]
@@ -112,4 +116,6 @@ class PortfolioContext(TypedDict, total=False):
     exposure: PortfolioExposure
     correlations: Dict[str, float]
     risk_metrics: Dict[str, Any]
+    feedback: Dict[str, Any]
+    performance_report: Dict[str, Any]
 

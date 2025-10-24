@@ -5,6 +5,7 @@ from tradingagents.agents.risk_mgmt.context_utils import (
     serialize_portfolio_context,
     summarize_portfolio_risk,
 )
+from tradingagents.agents.utils.portfolio_feedback import format_portfolio_feedback
 
 
 def create_neutral_debator(llm):
@@ -25,6 +26,9 @@ def create_neutral_debator(llm):
         portfolio_context = state.get("portfolio_context")
         risk_summary = summarize_portfolio_risk(portfolio_context)
         risk_json = serialize_portfolio_context(portfolio_context)
+        feedback_note = format_portfolio_feedback(
+            state.get("portfolio_feedback"), "risk"
+        )
 
         prompt = f"""As the Neutral Risk Analyst, your role is to provide a balanced perspective, weighing both the potential benefits and risks of the trader's decision or plan. You prioritize a well-rounded approach, evaluating the upsides and downsides while factoring in broader market trends, potential economic shifts, and diversification strategies.Here is the trader's decision:
 
@@ -35,6 +39,9 @@ Portfolio risk snapshot:
 
 Structured portfolio context:
 {risk_json}
+
+Portfolio feedback to integrate:
+{feedback_note if feedback_note else "None"}
 
 Your task is to challenge both the Risky and Safe Analysts, pointing out where each perspective may be overly optimistic or overly cautious. Use insights from the following data sources to support a moderate, sustainable strategy to adjust the trader's decision:
 

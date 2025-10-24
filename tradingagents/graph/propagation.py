@@ -20,6 +20,7 @@ class Propagator:
         company_name: str,
         trade_date: str,
         portfolio_context: Optional[Mapping[str, Any]] = None,
+        portfolio_feedback: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create the initial state for the agent graph."""
         state = {
@@ -43,10 +44,13 @@ class Propagator:
             "sentiment_report": "",
             "news_report": "",
             "portfolio_context": None,
+            "portfolio_feedback": None,
             "trader_structured_plan": None,
         }
         if portfolio_context is not None:
             state["portfolio_context"] = dict(portfolio_context)
+        if portfolio_feedback is not None:
+            state["portfolio_feedback"] = dict(portfolio_feedback)
         return state
 
     def get_graph_args(self) -> Dict[str, Any]:

@@ -2,6 +2,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 import time
 import json
 from tradingagents.agents.utils.agent_utils import get_fundamentals, get_balance_sheet, get_cashflow, get_income_statement, get_insider_sentiment, get_insider_transactions
+from tradingagents.agents.utils.portfolio_feedback import format_portfolio_feedback
 from tradingagents.dataflows.config import get_config
 
 
@@ -23,6 +24,16 @@ def create_fundamentals_analyst(llm):
             + " Make sure to append a Markdown table at the end of the report to organize key points in the report, organized and easy to read."
             + " Use the available tools: `get_fundamentals` for comprehensive company analysis, `get_balance_sheet`, `get_cashflow`, and `get_income_statement` for specific financial statements.",
         )
+
+        feedback_note = format_portfolio_feedback(
+            state.get("portfolio_feedback"), "analysts"
+        )
+        if feedback_note:
+            system_message = (
+                system_message
+                + "\n\nPortfolio feedback to emphasize in the fundamental review:\n"
+                + feedback_note
+            )
 
         prompt = ChatPromptTemplate.from_messages(
             [

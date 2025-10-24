@@ -5,6 +5,7 @@ from tradingagents.agents.risk_mgmt.context_utils import (
     serialize_portfolio_context,
     summarize_portfolio_risk,
 )
+from tradingagents.agents.utils.portfolio_feedback import format_portfolio_feedback
 
 
 def create_risk_manager(llm, memory):
@@ -24,6 +25,9 @@ def create_risk_manager(llm, memory):
 
         risk_summary = summarize_portfolio_risk(portfolio_context)
         risk_json = serialize_portfolio_context(portfolio_context)
+        feedback_note = format_portfolio_feedback(
+            state.get("portfolio_feedback"), "risk"
+        )
 
         constraints = (portfolio_context or {}).get("constraints", {})
         exposure = (portfolio_context or {}).get("exposure", {})
@@ -175,6 +179,9 @@ Portfolio risk snapshot:
 
 Structured portfolio context:
 {risk_json}
+
+Portfolio feedback summary:
+{feedback_note if feedback_note else "None"}
 
 Identified risk limit breaches:
 {violation_text}

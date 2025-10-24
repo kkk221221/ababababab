@@ -17,6 +17,8 @@ from tradingagents.portfolio.state import (
     TransactionRecord,
     empty_portfolio,
 )
+from tradingagents.portfolio.feedback import generate_portfolio_feedback
+from tradingagents.portfolio.reporting import update_performance_report
 from tradingagents.portfolio.risk import compute_portfolio_risk_metrics
 from tradingagents.portfolio.storage import PortfolioStorage
 
@@ -177,6 +179,10 @@ class PortfolioOrchestrator:
                 self.config.get("results_dir", "./results"),
                 snapshot_filename=portfolio_cfg.get("snapshot_filename"),
                 transactions_filename=portfolio_cfg.get("transactions_filename"),
+                feedback_filename=portfolio_cfg.get("feedback_filename"),
+                lessons_filename=portfolio_cfg.get("lessons_filename"),
+                nav_history_filename=portfolio_cfg.get("nav_history_filename"),
+                performance_filename=portfolio_cfg.get("performance_filename"),
             )
         else:
             self.storage = storage
@@ -302,6 +308,8 @@ class PortfolioOrchestrator:
             "correlations": correlations,
             "focus_symbol": symbol,
             "risk_metrics": risk_metrics_payload,
+            "feedback": self.storage.load_latest_feedback() or {},
+            "performance_report": self.storage.load_performance_report() or {},
         }
 
     def _aggregate_opportunity(
@@ -338,7 +346,7 @@ class PortfolioOrchestrator:
         )
 
     def apply_execution(self, execution: Mapping[str, Any]) -> PortfolioSnapshot:
-        """Persist an approved trade execution and update the portfolio snapshot."""
+        """Persist an approved trade execution, update reports, and log feedback."""
 
         snapshot = self.load_portfolio()
         portfolio_cfg = self.config.get("portfolio", {})
@@ -377,6 +385,37 @@ class PortfolioOrchestrator:
         )
         self.storage.save_snapshot(snapshot)
         self.storage.record_transaction(transaction)
+
+        risk_metrics = None
+        try:
+            risk_metrics = compute_portfolio_risk_metrics(
+                snapshot,
+                trade_date=transaction.timestamp.strftime("%Y-%m-%d"),
+                benchmark_symbol=str(
+                    portfolio_cfg.get("risk_benchmark_symbol", "SPY")
+                ),
+                lookback_days=int(portfolio_cfg.get("risk_lookback_days", 180)),
+                confidence=float(portfolio_cfg.get("var_confidence", 0.95)),
+                risk_free_rate=float(portfolio_cfg.get("risk_free_rate", 0.02)),
+            )
+        except Exception:
+            risk_metrics = None
+
+        feedback_entry = generate_portfolio_feedback(
+            snapshot,
+            config=self.config,
+            transaction=transaction,
+            risk_metrics=risk_metrics,
+        )
+        history_limit = int(portfolio_cfg.get("feedback_history_limit", 0))
+        self.storage.append_feedback(
+            feedback_entry,
+            history_limit=history_limit if history_limit > 0 else None,
+        )
+        lessons = feedback_entry.get("lessons", [])
+        if lessons:
+            self.storage.append_lessons(lessons)
+        update_performance_report(self.storage, snapshot)
         return snapshot
 
     def run_universe(
@@ -411,6 +450,7 @@ class PortfolioOrchestrator:
 
         opportunities: List[TradeOpportunity] = []
         graph_results: List[Dict[str, Any]] = []
+        latest_feedback = self.storage.load_latest_feedback()
 
         for symbol in tickers:
             graph = self._graph_factory()
@@ -424,6 +464,7 @@ class PortfolioOrchestrator:
                 symbol,
                 trade_date,
                 portfolio_context=portfolio_context,
+                portfolio_feedback=latest_feedback,
             )
             opportunities.append(self._aggregate_opportunity(symbol, trade_date, final_state))
             graph_results.append(
@@ -444,6 +485,7 @@ class PortfolioOrchestrator:
                 "macro_snapshot": macro_snapshot.to_dict(),
                 "risk_metrics": risk_metrics_payload,
                 "trade_opportunities": [item.to_dict() for item in opportunities],
+                "portfolio_feedback": latest_feedback or {},
             },
         }
 

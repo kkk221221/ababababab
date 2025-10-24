@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Mapping, Optional, Sequence
 
+from tradingagents.agents.utils.portfolio_feedback import format_portfolio_feedback
 from tradingagents.portfolio.state import PortfolioSnapshot
 from tradingagents.dataflows.macro import MacroSnapshot
 
@@ -59,6 +60,9 @@ Macro Overview:
 
 Trade Opportunities (proposals awaiting approval):
 {trade_opportunities}
+
+Portfolio Feedback from recent executions:
+{portfolio_feedback}
 """
 
 
@@ -153,6 +157,9 @@ def create_portfolio_manager(llm):
         portfolio_snapshot = _coerce_portfolio_snapshot(state.get("portfolio_snapshot"))
         macro_snapshot = _coerce_macro_snapshot(state.get("macro_snapshot"))
         raw_opportunities = state.get("trade_opportunities", [])
+        feedback_note = format_portfolio_feedback(
+            state.get("portfolio_feedback"), "portfolio_manager"
+        )
         if isinstance(raw_opportunities, Mapping):
             trade_opportunities: Sequence[Mapping[str, Any]] = [raw_opportunities]
         elif isinstance(raw_opportunities, Sequence):
@@ -165,6 +172,7 @@ def create_portfolio_manager(llm):
             portfolio_state=_format_portfolio(portfolio_snapshot) if portfolio_snapshot else "Unavailable",
             macro_overview=macro_snapshot.to_prompt_block() if macro_snapshot else "Unavailable",
             trade_opportunities=_format_trade_opportunities(trade_opportunities),
+            portfolio_feedback=feedback_note or "None provided",
         )
 
         response = llm.invoke(prompt)

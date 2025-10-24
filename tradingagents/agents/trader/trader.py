@@ -3,6 +3,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional
 
+from tradingagents.agents.utils.portfolio_feedback import format_portfolio_feedback
 from tradingagents.dataflows.y_finance import get_stock_stats_indicators_window
 
 
@@ -127,6 +128,9 @@ def create_trader(llm, memory):
         news_report = state["news_report"]
         fundamentals_report = state["fundamentals_report"]
         portfolio_context = state.get("portfolio_context")
+        trader_feedback = format_portfolio_feedback(
+            state.get("portfolio_feedback"), "trader"
+        )
 
         curr_situation = (
             f"{market_research_report}\n\n{sentiment_report}\n\n{news_report}\n\n{fundamentals_report}"
@@ -161,6 +165,7 @@ def create_trader(llm, memory):
             "portfolio_context": portfolio_context or {},
             "sizing_guidance": sizing_guidance,
             "trader_memory": past_memory_str.strip(),
+            "portfolio_feedback": trader_feedback,
         }
 
         system_prompt = (
@@ -176,6 +181,11 @@ def create_trader(llm, memory):
             "\"portfolio_alignment\": str, \"risk_notes\": str}}. Ensure every numeric field uses decimals, "
             "and omit additional commentary outside the JSON object."
         )
+        if trader_feedback:
+            system_prompt += (
+                " Emphasize alignment with the following portfolio feedback: "
+                + trader_feedback
+            )
 
         messages = [
             {"role": "system", "content": system_prompt},

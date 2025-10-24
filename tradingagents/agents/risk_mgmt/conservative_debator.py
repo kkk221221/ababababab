@@ -6,6 +6,7 @@ from tradingagents.agents.risk_mgmt.context_utils import (
     serialize_portfolio_context,
     summarize_portfolio_risk,
 )
+from tradingagents.agents.utils.portfolio_feedback import format_portfolio_feedback
 
 
 def create_safe_debator(llm):
@@ -26,6 +27,9 @@ def create_safe_debator(llm):
         portfolio_context = state.get("portfolio_context")
         risk_summary = summarize_portfolio_risk(portfolio_context)
         risk_json = serialize_portfolio_context(portfolio_context)
+        feedback_note = format_portfolio_feedback(
+            state.get("portfolio_feedback"), "risk"
+        )
 
         prompt = f"""As the Safe/Conservative Risk Analyst, your primary objective is to protect assets, minimize volatility, and ensure steady, reliable growth. You prioritize stability, security, and risk mitigation, carefully assessing potential losses, economic downturns, and market volatility. When evaluating the trader's decision or plan, critically examine high-risk elements, pointing out where the decision may expose the firm to undue risk and where more cautious alternatives could secure long-term gains. Here is the trader's decision:
 
@@ -36,6 +40,9 @@ Portfolio risk snapshot:
 
 Structured portfolio context:
 {risk_json}
+
+Portfolio feedback to incorporate:
+{feedback_note if feedback_note else "None"}
 
 Your task is to actively counter the arguments of the Risky and Neutral Analysts, highlighting where their views may overlook potential threats or fail to prioritize sustainability. Respond directly to their points, drawing from the following data sources to build a convincing case for a low-risk approach adjustment to the trader's decision:
 

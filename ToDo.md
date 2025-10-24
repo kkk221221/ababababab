@@ -36,9 +36,9 @@
 - [x] Expand the risk judge (`risk_manager.py`) to cross-check proposed trades against concentration limits, VaR thresholds, and stress scenarios, potentially requesting hedging suggestions when limits are breached.
 
 ### Phase 6 – Portfolio Manager Decision Loop & Feedback
-- [ ] Implement a closed-loop update where executed trades trigger portfolio snapshot refreshes, rebalancing checks, and feedback messages distributed to analysts, researchers, and the Portfolio Manager to inform future decisions.
-- [ ] Add hooks so `FinancialSituationMemory` can store notable portfolio-level lessons (e.g., leverage errors, concentration issues) for retrieval during future sessions across all agents.
-- [ ] Create reports summarizing portfolio performance over time (daily NAV, drawdowns) saved alongside existing evaluation logs for transparency and backtesting.
+- [x] Implement a closed-loop update where executed trades trigger portfolio snapshot refreshes, rebalancing checks, and feedback messages distributed to analysts, researchers, and the Portfolio Manager to inform future decisions.
+- [x] Add hooks so `FinancialSituationMemory` can store notable portfolio-level lessons (e.g., leverage errors, concentration issues) for retrieval during future sessions across all agents.
+- [x] Create reports summarizing portfolio performance over time (daily NAV, drawdowns) saved alongside existing evaluation logs for transparency and backtesting.
 
 ### Phase 7 – Interface, Tests, and Documentation
 - [ ] Extend the CLI (`cli/main.py`) to expose portfolio-wide configuration (initial capital, tickers per batch, allocation preferences) and display aggregated portfolio dashboards after each run.

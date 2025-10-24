@@ -19,6 +19,9 @@ DEFAULT_CONFIG = {
         "atr_position_multiple": 1.5,
         "min_trade_notional": 1_000.0,
         "correlation_lookback_days": 60,
+        "target_cash_buffer_pct": 0.05,
+        "rebalance_tolerance_pct": 0.02,
+        "feedback_history_limit": 50,
         "risk_benchmark_symbol": "SPY",
         "risk_lookback_days": 180,
         "var_confidence": 0.95,
@@ -29,6 +32,10 @@ DEFAULT_CONFIG = {
         "max_sector_exposure_pct": 0.35,
         "snapshot_filename": "portfolio_snapshot.json",
         "transactions_filename": "transactions.json",
+        "feedback_filename": "portfolio_feedback.json",
+        "lessons_filename": "portfolio_lessons.json",
+        "nav_history_filename": "nav_history.json",
+        "performance_filename": "portfolio_performance.json",
     },
     # Macro data ingestion defaults for the portfolio manager
     "macro": {

@@ -21,6 +21,7 @@ from tradingagents.agents.utils.agent_states import (
     RiskDebateState,
 )
 from tradingagents.dataflows.config import set_config
+from tradingagents.portfolio.storage import PortfolioStorage
 
 # Import the new abstract tool methods from agent_utils
 from tradingagents.agents.utils.agent_utils import (
@@ -91,6 +92,8 @@ class TradingAgentsGraph:
         self.invest_judge_memory = FinancialSituationMemory("invest_judge_memory", self.config)
         self.risk_manager_memory = FinancialSituationMemory("risk_manager_memory", self.config)
 
+        self._ingest_portfolio_lessons()
+
         # Create tool nodes
         self.tool_nodes = self._create_tool_nodes()
 
@@ -119,6 +122,51 @@ class TradingAgentsGraph:
 
         # Set up the graph
         self.graph = self.graph_setup.setup_graph(selected_analysts)
+
+    def _ingest_portfolio_lessons(self) -> None:
+        """Load stored portfolio lessons into each agent memory."""
+
+        portfolio_cfg = self.config.get("portfolio", {})
+        try:
+            storage = PortfolioStorage(
+                self.config.get("results_dir", "./results"),
+                snapshot_filename=portfolio_cfg.get("snapshot_filename"),
+                transactions_filename=portfolio_cfg.get("transactions_filename"),
+                feedback_filename=portfolio_cfg.get("feedback_filename"),
+                lessons_filename=portfolio_cfg.get("lessons_filename"),
+                nav_history_filename=portfolio_cfg.get("nav_history_filename"),
+                performance_filename=portfolio_cfg.get("performance_filename"),
+            )
+            lessons = storage.load_lessons()
+        except Exception:
+            lessons = []
+        if not lessons:
+            return
+
+        tuples = []
+        for lesson in lessons:
+            if not isinstance(lesson, dict):
+                continue
+            situation = str(lesson.get("situation", "")).strip()
+            recommendation = str(lesson.get("recommendation", "")).strip()
+            if not situation or not recommendation:
+                continue
+            tuples.append((situation, recommendation))
+
+        if not tuples:
+            return
+
+        for memory in (
+            self.bull_memory,
+            self.bear_memory,
+            self.trader_memory,
+            self.invest_judge_memory,
+            self.risk_manager_memory,
+        ):
+            try:
+                memory.add_situations(tuples)
+            except Exception:
+                continue
 
     def _create_tool_nodes(self) -> Dict[str, ToolNode]:
         """Create tool nodes for different data sources using abstract methods."""
@@ -163,6 +211,7 @@ class TradingAgentsGraph:
         trade_date,
         *,
         portfolio_context: Optional[Dict[str, Any]] = None,
+        portfolio_feedback: Optional[Dict[str, Any]] = None,
     ):
         """Run the trading agents graph for a company on a specific date.
 
@@ -173,13 +222,18 @@ class TradingAgentsGraph:
                 existing holdings, cash budgets, or concentration limits that
                 downstream agents can reference while reasoning about the
                 opportunity.
+            portfolio_feedback: Aggregated portfolio feedback messages that
+                should be surfaced to all agents in the workflow.
         """
 
         self.ticker = company_name
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
-            company_name, trade_date, portfolio_context=portfolio_context
+            company_name,
+            trade_date,
+            portfolio_context=portfolio_context,
+            portfolio_feedback=portfolio_feedback,
         )
         args = self.propagator.get_graph_args()
 
