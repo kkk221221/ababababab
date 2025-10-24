@@ -20,10 +20,10 @@
 - [x] Define prompt templates and structured outputs (JSON schema) so the Portfolio Manager returns normalized objectives (e.g., target weights, confidence scores) consumable by downstream components.
 
 ### Phase 3 – Multi-Asset Orchestration Layer
-- [ ] Design a `PortfolioOrchestrator` class under `tradingagents/portfolio/orchestrator.py` that coordinates macro assessment,
-      selects a ticker universe, and invokes per-ticker `TradingAgentsGraph` runs in parallel or sequence using allocated budgets.
-- [ ] Refactor `TradingAgentsGraph.propagate` to optionally accept a portfolio context object (current holdings, budget, concentration limits) so single-ticker analysis can tailor outputs without breaking existing CLI usage.
-- [ ] Implement an aggregation routine that collects each ticker’s `final_trade_decision` and converts it into structured trade opportunities forwarded to the Portfolio Manager for approval.
+- [x] Design a `PortfolioOrchestrator` class under `tradingagents/portfolio/orchestrator.py` that coordinates macro assessment,
+     selects a ticker universe, and invokes per-ticker `TradingAgentsGraph` runs in parallel or sequence using allocated budgets.
+- [x] Refactor `TradingAgentsGraph.propagate` to optionally accept a portfolio context object (current holdings, budget, concentration limits) so single-ticker analysis can tailor outputs without breaking existing CLI usage.
+- [x] Implement an aggregation routine that collects each ticker’s `final_trade_decision` and converts it into structured trade opportunities forwarded to the Portfolio Manager for approval.
 
 ### Phase 4 – Trader Enhancements for Position Sizing
 - [ ] Modify `create_trader` (and associated state updates) to request portfolio context from the orchestrator, compute position sizes using volatility-adjusted sizing (e.g., ATR from `get_stock_stats_indicators_window`), and output JSON containing side, quantity, entry constraints, and rationale.

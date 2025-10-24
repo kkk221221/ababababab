@@ -2,6 +2,7 @@
 
 from .state import PortfolioSnapshot, Position, TransactionRecord, empty_portfolio
 from .storage import PortfolioStorage
+from .orchestrator import PortfolioOrchestrator, TradeOpportunity
 
 __all__ = [
     "PortfolioSnapshot",
@@ -9,4 +10,6 @@ __all__ = [
     "TransactionRecord",
     "PortfolioStorage",
     "empty_portfolio",
+    "PortfolioOrchestrator",
+    "TradeOpportunity",
 ]

@@ -1,6 +1,6 @@
-from typing import Annotated, Sequence
+from typing import Annotated, Dict, Any, Optional, Sequence
 from datetime import date, timedelta, datetime
-from typing_extensions import TypedDict, Optional
+from typing_extensions import TypedDict
 from langchain_openai import ChatOpenAI
 from tradingagents.agents import *
 from langgraph.prebuilt import ToolNode
@@ -52,6 +52,10 @@ class AgentState(MessagesState):
     trade_date: Annotated[str, "What date we are trading at"]
 
     sender: Annotated[str, "Agent that sent this message"]
+
+    portfolio_context: Annotated[
+        Optional[Dict[str, Any]], "Portfolio level context for the current run"
+    ]
 
     # research step
     market_report: Annotated[str, "Report from the Market Analyst"]

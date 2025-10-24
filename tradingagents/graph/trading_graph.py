@@ -157,14 +157,29 @@ class TradingAgentsGraph:
             ),
         }
 
-    def propagate(self, company_name, trade_date):
-        """Run the trading agents graph for a company on a specific date."""
+    def propagate(
+        self,
+        company_name,
+        trade_date,
+        *,
+        portfolio_context: Optional[Dict[str, Any]] = None,
+    ):
+        """Run the trading agents graph for a company on a specific date.
+
+        Args:
+            company_name: The symbol or name being analyzed.
+            trade_date: The evaluation date in YYYY-MM-DD format.
+            portfolio_context: Optional portfolio level information such as
+                existing holdings, cash budgets, or concentration limits that
+                downstream agents can reference while reasoning about the
+                opportunity.
+        """
 
         self.ticker = company_name
 
         # Initialize state
         init_agent_state = self.propagator.create_initial_state(
-            company_name, trade_date
+            company_name, trade_date, portfolio_context=portfolio_context
         )
         args = self.propagator.get_graph_args()
 
