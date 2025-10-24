@@ -41,9 +41,9 @@
 - [x] Create reports summarizing portfolio performance over time (daily NAV, drawdowns) saved alongside existing evaluation logs for transparency and backtesting.
 
 ### Phase 7 – Interface, Tests, and Documentation
-- [ ] Extend the CLI (`cli/main.py`) to expose portfolio-wide configuration (initial capital, tickers per batch, allocation preferences) and display aggregated portfolio dashboards after each run.
-- [ ] Write integration tests or simulations (`tests/` or extend `test.py`) that exercise the orchestrator with mocked data to verify position sizing, portfolio updates, and risk limit enforcement without hitting external APIs.
-- [ ] Update `README.md` with a dedicated section describing the new portfolio workflow, configuration settings, and sample outputs so users understand the expanded capabilities.
+- [x] Extend the CLI (`cli/main.py`) to expose portfolio-wide configuration (initial capital, tickers per batch, allocation preferences) and display aggregated portfolio dashboards after each run.
+- [x] Write integration tests or simulations (`tests/` or extend `test.py`) that exercise the orchestrator with mocked data to verify position sizing, portfolio updates, and risk limit enforcement without hitting external APIs.
+- [x] Update `README.md` with a dedicated section describing the new portfolio workflow, configuration settings, and sample outputs so users understand the expanded capabilities.
 
 ## Validation Checklist
 - [ ] Verify backward compatibility by allowing legacy single-ticker runs to bypass the Portfolio Manager pipeline when portfolio features are disabled.

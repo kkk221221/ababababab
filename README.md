@@ -151,6 +151,31 @@ An interface will appear showing results as they load, letting you track the age
   <img src="https://raw.githubusercontent.com/TauricResearch/TradingAgents/main/assets/cli/cli_transaction.png" width="100%" style="display: inline-block; margin: 0 2%;">
 </p>
 
+#### Portfolio Workflow CLI
+
+The CLI now exposes the multi-ticker portfolio orchestrator so you can manage cash, holdings, and risk limits without leaving the terminal. Launch it with:
+
+```bash
+python -m cli.main portfolio --tickers AAPL,MSFT,GOOGL --date 2024-01-05 \
+  --initial-cash 750000 --tickers-per-batch 2 --max-single-pct 0.2 --risk-per-trade-pct 0.01
+```
+
+When no overrides are provided, the command interactively prompts for:
+
+- **Starting cash** used to seed the persistent portfolio snapshot
+- **Tickers per batch** to control how many single-name analyses run together
+- **Allocation preferences** including the maximum position size and risk-per-trade budget
+
+Each batch prints a Rich-powered dashboard that summarizes:
+
+- Current portfolio equity, cash balance, and realized P&L
+- Open positions with cost basis, market value, and unrealized P&L
+- Trader opportunities produced by the underlying analyst, research, trader, and risk agents
+- Portfolio risk metrics (beta, VaR, Sharpe, sector concentrations) sourced from the risk toolkit
+- Latest macro snapshot and portfolio feedback so the analyst teams can see recent guidance
+
+Portfolio artefacts—including snapshots, transactions, feedback, NAV history, and lessons—are saved under `results/portfolio/` for later sessions.
+
 ## TradingAgents Package
 
 ### Implementation Details
@@ -203,6 +228,16 @@ print(decision)
 > The default configuration uses yfinance for stock price and technical data, and Alpha Vantage for fundamental and news data. For production use or if you encounter rate limits, consider upgrading to [Alpha Vantage Premium](https://www.alphavantage.co/premium/) for more stable and reliable data access. For offline experimentation, there's a local data vendor option that uses our **Tauric TradingDB**, a curated dataset for backtesting, though this is still in development. We're currently refining this dataset and plan to release it soon alongside our upcoming projects. Stay tuned!
 
 You can view the full list of configurations in `tradingagents/default_config.py`.
+
+## Testing
+
+Run the integration suite to validate the portfolio orchestrator without hitting external data vendors:
+
+```bash
+python -m unittest discover -s tests
+```
+
+The tests simulate multi-ticker runs with mocked risk metrics to confirm that portfolio sizing, state updates, and persistence behave as expected.
 
 ## Contributing
 

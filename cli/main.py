@@ -1,5 +1,6 @@
-from typing import Optional
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 import datetime
+import textwrap
 import typer
 from pathlib import Path
 from functools import wraps
@@ -24,12 +25,17 @@ from rich import box
 from rich.align import Align
 from rich.rule import Rule
 
+import questionary
+
 from tradingagents.graph.trading_graph import TradingAgentsGraph
 from tradingagents.default_config import DEFAULT_CONFIG
+from tradingagents.portfolio.orchestrator import PortfolioOrchestrator
 from cli.models import AnalystType
+import cli.utils as cli_utils
 from cli.utils import *
 
 console = Console()
+cli_utils.console = console
 
 app = typer.Typer(
     name="TradingAgents",
@@ -735,6 +741,279 @@ def extract_content_string(content):
     else:
         return str(content)
 
+PORTFOLIO_PROMPT_STYLE = questionary.Style(
+    [
+        ("text", "fg:cyan"),
+        ("highlighted", "noinherit"),
+        ("selected", "fg:cyan noinherit"),
+        ("pointer", "fg:cyan noinherit"),
+    ]
+)
+
+
+def _parse_ticker_list(raw: Optional[str]) -> List[str]:
+    if not raw:
+        return []
+    tickers: List[str] = []
+    for chunk in raw.replace(";", ",").split(","):
+        symbol = chunk.strip().upper()
+        if symbol:
+            tickers.append(symbol)
+    return tickers
+
+
+def _prompt_number(
+    prompt: str,
+    default: Optional[float],
+    *,
+    number_type: type = float,
+    min_value: Optional[float] = None,
+    max_value: Optional[float] = None,
+) -> Optional[float]:
+    default_text = "" if default in (None, "") else str(default)
+
+    def _validate(answer: Optional[str]):
+        if answer is None:
+            return "Enter a value or leave blank to keep the default."
+        text = answer.strip()
+        if not text:
+            return True
+        try:
+            value = number_type(text)
+        except ValueError:
+            return "Enter a valid number."
+        if min_value is not None and value < min_value:
+            return f"Enter a value >= {min_value}."
+        if max_value is not None and value > max_value:
+            return f"Enter a value <= {max_value}."
+        return True
+
+    response = questionary.text(
+        prompt,
+        default=default_text,
+        validate=_validate,
+        style=PORTFOLIO_PROMPT_STYLE,
+    ).ask()
+    if response is None or not response.strip():
+        return default
+    return number_type(response.strip())
+
+
+def _ensure_trade_date(value: Optional[str]) -> str:
+    if value:
+        try:
+            datetime.datetime.strptime(value, "%Y-%m-%d")
+        except ValueError:
+            console.print(
+                f"[red]Invalid date '{value}'. Please use YYYY-MM-DD format.[/red]"
+            )
+            raise typer.Exit(code=1)
+        return value
+    console.print(
+        Panel(
+            "Enter the trade date for this portfolio run (YYYY-MM-DD)",
+            border_style="cyan",
+        )
+    )
+    return get_analysis_date()
+
+
+def _ensure_tickers(
+    tickers_option: Optional[str],
+    default_universe: Sequence[str],
+) -> List[str]:
+    if tickers_option:
+        tickers = _parse_ticker_list(tickers_option)
+    else:
+        default_text = ", ".join(default_universe)
+
+        def _validate(answer: Optional[str]):
+            parsed = _parse_ticker_list(answer)
+            return bool(parsed) or "Enter at least one ticker symbol."
+
+        response = questionary.text(
+            "Enter the tickers to analyze (comma separated):",
+            default=default_text,
+            validate=_validate,
+            style=PORTFOLIO_PROMPT_STYLE,
+        ).ask()
+        tickers = _parse_ticker_list(response or default_text)
+
+    if not tickers:
+        console.print("[red]No tickers provided for the portfolio run.[/red]")
+        raise typer.Exit(code=1)
+    return tickers
+
+
+def _format_currency(value: Optional[float]) -> str:
+    if value is None:
+        return "-"
+    return f"${value:,.2f}"
+
+
+def _format_percent(value: Optional[float]) -> str:
+    if value is None:
+        return "-"
+    return f"{value * 100:.1f}%"
+
+
+def display_portfolio_dashboard(
+    batch: Sequence[str],
+    run_result: Mapping[str, Any],
+) -> None:
+    snapshot = run_result.get("portfolio_snapshot")
+    if snapshot is None:
+        console.print("[yellow]No portfolio snapshot available for display.[/yellow]")
+        return
+
+    opportunities = run_result.get("trade_opportunities", []) or []
+    portfolio_input = run_result.get("portfolio_manager_input", {}) or {}
+    risk_metrics = portfolio_input.get("risk_metrics") or {}
+    feedback = portfolio_input.get("portfolio_feedback") or {}
+    macro_snapshot = run_result.get("macro_snapshot")
+
+    console.rule(f"Portfolio Batch: {', '.join(batch)}")
+
+    summary_table = Table(box=box.SIMPLE_HEAVY)
+    summary_table.add_column("Metric", justify="left", style="bold")
+    summary_table.add_column("Value", justify="right")
+    summary_table.add_row(
+        "As of",
+        snapshot.as_of.strftime("%Y-%m-%d %H:%M"),
+    )
+    summary_table.add_row("Cash", _format_currency(snapshot.cash))
+    summary_table.add_row(
+        "Market Value",
+        _format_currency(snapshot.total_market_value),
+    )
+    summary_table.add_row(
+        "Total Equity",
+        _format_currency(snapshot.total_equity),
+    )
+    summary_table.add_row(
+        "Realized P&L",
+        _format_currency(snapshot.realized_pnl),
+    )
+    summary_table.add_row("Open Positions", str(len(snapshot.positions)))
+
+    positions_table = Table(box=box.MINIMAL_DOUBLE_HEAD)
+    positions_table.add_column("Symbol")
+    positions_table.add_column("Qty", justify="right")
+    positions_table.add_column("Avg Cost", justify="right")
+    positions_table.add_column("Market Value", justify="right")
+    positions_table.add_column("Unrealized P&L", justify="right")
+    if snapshot.positions:
+        for position in sorted(snapshot.iter_positions(), key=lambda pos: pos.symbol):
+            positions_table.add_row(
+                position.symbol,
+                f"{position.quantity:,.2f}",
+                _format_currency(position.average_cost),
+                _format_currency(position.market_value),
+                _format_currency(position.unrealized_pnl),
+            )
+    else:
+        positions_table.add_row("-", "-", "-", "-", "-")
+
+    opportunity_table = Table(box=box.SIMPLE_HEAVY)
+    opportunity_table.add_column("Symbol", style="bold")
+    opportunity_table.add_column("Side", justify="center")
+    opportunity_table.add_column("Confidence", justify="right")
+    opportunity_table.add_column("Summary", justify="left")
+    if opportunities:
+        for opportunity in opportunities:
+            confidence = opportunity.get("confidence")
+            if isinstance(confidence, (int, float)):
+                confidence_str = f"{confidence:.0%}"
+            else:
+                confidence_str = "-"
+            summary = opportunity.get("summary") or opportunity.get("trader_plan") or ""
+            opportunity_table.add_row(
+                opportunity.get("symbol", "-"),
+                opportunity.get("side", "-"),
+                confidence_str,
+                textwrap.shorten(summary, width=80, placeholder="…"),
+            )
+    else:
+        opportunity_table.add_row("-", "-", "-", "No trade opportunities generated.")
+
+    risk_table = Table(box=box.SIMPLE_HEAVY)
+    risk_table.add_column("Metric")
+    risk_table.add_column("Value", justify="right")
+    if risk_metrics:
+        beta = risk_metrics.get("beta")
+        var_pct = risk_metrics.get("value_at_risk_pct")
+        sharpe = risk_metrics.get("sharpe_ratio")
+        risk_table.add_row(
+            "Portfolio Beta",
+            f"{beta:.2f}" if isinstance(beta, (int, float)) else "-",
+        )
+        risk_table.add_row("VaR", _format_percent(var_pct))
+        risk_table.add_row(
+            "Sharpe Ratio",
+            f"{sharpe:.2f}" if isinstance(sharpe, (int, float)) else "-",
+        )
+        risk_free_rate = risk_metrics.get("risk_free_rate")
+        if isinstance(risk_free_rate, (int, float)):
+            risk_table.add_row("Risk-Free Rate", _format_percent(risk_free_rate))
+        sector_exposure = risk_metrics.get("sector_exposure") or {}
+        for sector, exposure in sorted(sector_exposure.items()):
+            risk_table.add_row(f"Sector {sector}", _format_percent(exposure))
+    else:
+        risk_table.add_row("Status", "No quantitative risk metrics available")
+
+    summary_panel = Panel(summary_table, border_style="green", title="Portfolio Summary")
+    risk_panel = Panel(risk_table, border_style="red", title="Risk Overview")
+    console.print(Columns([summary_panel, risk_panel], equal=True, expand=True))
+
+    holdings_panel = Panel(
+        positions_table,
+        border_style="blue",
+        title="Current Holdings",
+    )
+    opportunities_panel = Panel(
+        opportunity_table,
+        border_style="cyan",
+        title="Trade Opportunities",
+    )
+    console.print(Columns([holdings_panel, opportunities_panel], equal=True, expand=True))
+
+    if macro_snapshot is not None:
+        try:
+            macro_block = macro_snapshot.to_prompt_block()
+        except AttributeError:
+            macro_block = str(macro_snapshot)
+        console.print(
+            Panel(
+                Markdown(macro_block),
+                title="Macro Snapshot",
+                border_style="yellow",
+                padding=(1, 2),
+            )
+        )
+
+    if isinstance(feedback, Mapping) and feedback:
+        feedback_lines = []
+        summary_text = feedback.get("summary")
+        if summary_text:
+            feedback_lines.append(summary_text)
+        alerts = feedback.get("alerts") or []
+        if alerts:
+            feedback_lines.append("\nAlerts:")
+            feedback_lines.extend(f"- {alert}" for alert in alerts)
+        audience = feedback.get("audience") or {}
+        manager_notes = audience.get("portfolio_manager") or []
+        if manager_notes:
+            feedback_lines.append("\nPortfolio Manager Notes:")
+            feedback_lines.extend(f"- {note}" for note in manager_notes)
+        console.print(
+            Panel(
+                "\n".join(line for line in feedback_lines if line).strip(),
+                title="Latest Portfolio Feedback",
+                border_style="magenta",
+                padding=(1, 2),
+            )
+        )
+
 def run_analysis():
     # First get all user selections
     selections = get_user_selections()
@@ -1100,9 +1379,155 @@ def run_analysis():
         update_display(layout)
 
 
+def run_portfolio_session(
+    *,
+    tickers: Optional[str],
+    trade_date: Optional[str],
+    initial_cash: Optional[float],
+    tickers_per_batch: Optional[int],
+    max_single_pct: Optional[float],
+    risk_per_trade_pct: Optional[float],
+) -> None:
+    config = dict(DEFAULT_CONFIG)
+    config["portfolio"] = dict(DEFAULT_CONFIG.get("portfolio", {}))
+    portfolio_cfg = config["portfolio"]
+
+    default_universe = ["AAPL", "MSFT", "SPY"]
+    selected_tickers = _ensure_tickers(tickers, default_universe)
+    run_date = _ensure_trade_date(trade_date)
+
+    if initial_cash is None:
+        prompted_cash = _prompt_number(
+            "Starting cash for the portfolio (press Enter to keep default):",
+            portfolio_cfg.get("starting_cash"),
+            min_value=0.0,
+        )
+        if prompted_cash is not None:
+            portfolio_cfg["starting_cash"] = float(prompted_cash)
+    else:
+        portfolio_cfg["starting_cash"] = float(initial_cash)
+
+    if tickers_per_batch is None:
+        prompted_batch = _prompt_number(
+            "Tickers to analyze per batch:",
+            portfolio_cfg.get("tickers_per_batch"),
+            number_type=int,
+            min_value=1,
+        )
+        if prompted_batch is not None:
+            portfolio_cfg["tickers_per_batch"] = int(prompted_batch)
+    else:
+        portfolio_cfg["tickers_per_batch"] = max(1, int(tickers_per_batch))
+
+    if max_single_pct is None:
+        prompted_single = _prompt_number(
+            "Maximum allocation per single position (0-1):",
+            portfolio_cfg.get("max_single_position_pct"),
+            min_value=0.0,
+            max_value=1.0,
+        )
+        if prompted_single is not None:
+            portfolio_cfg["max_single_position_pct"] = float(prompted_single)
+    else:
+        portfolio_cfg["max_single_position_pct"] = float(max_single_pct)
+
+    if risk_per_trade_pct is None:
+        prompted_risk = _prompt_number(
+            "Risk budget per trade (0-1):",
+            portfolio_cfg.get("risk_per_trade_pct"),
+            min_value=0.0,
+            max_value=1.0,
+        )
+        if prompted_risk is not None:
+            portfolio_cfg["risk_per_trade_pct"] = float(prompted_risk)
+    else:
+        portfolio_cfg["risk_per_trade_pct"] = float(risk_per_trade_pct)
+
+    orchestrator = PortfolioOrchestrator(config=config)
+    orchestrator.load_portfolio(
+        default_cash=float(portfolio_cfg.get("starting_cash", 0.0) or 0.0)
+    )
+
+    batch_size = int(portfolio_cfg.get("tickers_per_batch") or len(selected_tickers))
+    batch_size = max(1, batch_size)
+
+    configuration_summary = [
+        f"Starting Cash: {_format_currency(portfolio_cfg.get('starting_cash'))}",
+        f"Tickers per Batch: {batch_size}",
+        f"Max Single Position: {_format_percent(portfolio_cfg.get('max_single_position_pct'))}",
+        f"Risk per Trade: {_format_percent(portfolio_cfg.get('risk_per_trade_pct'))}",
+    ]
+    console.print(
+        Panel(
+            "\n".join(configuration_summary),
+            title="Portfolio Run Configuration",
+            border_style="cyan",
+            padding=(1, 2),
+        )
+    )
+    console.print(f"[cyan]Trade date:[/cyan] {run_date}")
+
+    for start in range(0, len(selected_tickers), batch_size):
+        batch = selected_tickers[start : start + batch_size]
+        run_result = orchestrator.run_universe(batch, run_date)
+        display_portfolio_dashboard(batch, run_result)
+
+    portfolio_dir = Path(config.get("results_dir", "./results")) / "portfolio"
+    console.print(
+        f"[green]Portfolio artefacts saved to:[/green] {portfolio_dir.resolve()}"
+    )
+
+
 @app.command()
 def analyze():
     run_analysis()
+
+
+@app.command()
+def portfolio(
+    tickers: Optional[str] = typer.Option(
+        None,
+        "--tickers",
+        "-t",
+        help="Comma separated list of tickers to analyze (e.g. AAPL,MSFT,SPY).",
+    ),
+    trade_date: Optional[str] = typer.Option(
+        None,
+        "--date",
+        "-d",
+        help="Trade date in YYYY-MM-DD format. Defaults to prompting if omitted.",
+    ),
+    initial_cash: Optional[float] = typer.Option(
+        None,
+        "--initial-cash",
+        help="Override the starting cash for the portfolio (in dollars).",
+    ),
+    tickers_per_batch: Optional[int] = typer.Option(
+        None,
+        "--tickers-per-batch",
+        help="Number of tickers to process in each orchestrator batch.",
+    ),
+    max_single_pct: Optional[float] = typer.Option(
+        None,
+        "--max-single-pct",
+        help="Maximum allocation per position as a decimal (e.g. 0.15 for 15%).",
+    ),
+    risk_per_trade_pct: Optional[float] = typer.Option(
+        None,
+        "--risk-per-trade-pct",
+        help="Risk budget per trade as a decimal (e.g. 0.01 for 1%).",
+    ),
+) -> None:
+    """Run the multi-ticker portfolio workflow and display dashboards."""
+
+    run_portfolio_session(
+        tickers=tickers,
+        trade_date=trade_date,
+        initial_cash=initial_cash,
+        tickers_per_batch=tickers_per_batch,
+        max_single_pct=max_single_pct,
+        risk_per_trade_pct=risk_per_trade_pct,
+    )
 
 
 if __name__ == "__main__":

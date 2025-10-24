@@ -11,6 +11,7 @@ DEFAULT_CONFIG = {
     # Portfolio configuration
     "portfolio": {
         "starting_cash": float(os.getenv("TRADINGAGENTS_STARTING_CASH", 1_000_000.0)),
+        "tickers_per_batch": int(os.getenv("TRADINGAGENTS_TICKERS_PER_BATCH", 5)),
         "default_slippage_bps": 5.0,
         "commission_per_share": 0.0,
         "max_single_position_pct": 0.1,
